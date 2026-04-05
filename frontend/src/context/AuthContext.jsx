@@ -1,12 +1,80 @@
-import React, { createContext, useContext, useReducer, useEffect } from 'react';
-import api, { authAPI } from '../services/api';
+import React, { createContext, useContext, useEffect, useReducer } from 'react';
+import { authAPI } from '../services/api';
+
+const STORAGE_KEYS = {
+  token: 'token',
+  user: 'user',
+};
+
+const readStorage = (key) => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    console.error(`Unable to read ${key} from storage:`, error);
+    return null;
+  }
+};
+
+const writeStorage = (key, value) => {
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (error) {
+    console.error(`Unable to write ${key} to storage:`, error);
+  }
+};
+
+const removeStorage = (key) => {
+  try {
+    window.localStorage.removeItem(key);
+  } catch (error) {
+    console.error(`Unable to remove ${key} from storage:`, error);
+  }
+};
+
+const getStoredToken = () => readStorage(STORAGE_KEYS.token);
+
+const getStoredUser = () => {
+  const rawUser = readStorage(STORAGE_KEYS.user);
+  if (!rawUser) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawUser);
+  } catch (error) {
+    console.error('Unable to parse stored user:', error);
+    removeStorage(STORAGE_KEYS.user);
+    return null;
+  }
+};
+
+const clearStoredAuth = () => {
+  removeStorage(STORAGE_KEYS.token);
+  removeStorage(STORAGE_KEYS.user);
+};
+
+const persistAuth = ({ token, user }) => {
+  if (token) {
+    writeStorage(STORAGE_KEYS.token, token);
+  }
+
+  if (user) {
+    writeStorage(STORAGE_KEYS.user, JSON.stringify(user));
+  }
+};
+
+const getAuthErrorMessage = (error, fallbackMessage) =>
+  error?.errors?.[0]?.msg || error?.message || fallbackMessage;
+
+const storedToken = getStoredToken();
+const storedUser = getStoredUser();
 
 // Initial state
 const initialState = {
-  user: null,
-  token: localStorage.getItem('token'),
-  loading: true,
-  isAuthenticated: false,
+  user: storedUser,
+  token: storedToken,
+  loading: Boolean(storedToken),
+  isAuthenticated: Boolean(storedToken && storedUser),
 };
 
 // Action types
@@ -35,6 +103,7 @@ const authReducer = (state, action) => {
         isAuthenticated: true,
         user: action.payload.user,
         token: action.payload.token,
+        error: null,
       };
     case AUTH_ACTIONS.LOGIN_FAILURE:
       return {
@@ -59,6 +128,7 @@ const authReducer = (state, action) => {
         loading: false,
         isAuthenticated: true,
         user: action.payload,
+        error: null,
       };
     case AUTH_ACTIONS.LOAD_USER_FAILURE:
       return {
@@ -87,24 +157,23 @@ export const AuthProvider = ({ children }) => {
 
   // Load user from token
   const loadUser = async () => {
-    const token = localStorage.getItem('token');
+    const token = getStoredToken();
     if (!token) {
       dispatch({ type: AUTH_ACTIONS.LOAD_USER_FAILURE });
       return;
     }
 
     try {
-      const response = await authAPI.getProfile();
-      console.log('loadUser response:', response);
+      const profile = await authAPI.getProfile();
+      persistAuth({ token, user: profile });
+
       dispatch({
         type: AUTH_ACTIONS.LOAD_USER_SUCCESS,
-        payload: response.data, // Use response.data since API interceptor returns response.data
+        payload: profile,
       });
     } catch (error) {
-      console.error('loadUser error:', error);
       dispatch({ type: AUTH_ACTIONS.LOAD_USER_FAILURE });
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+      clearStoredAuth();
     }
   };
 
@@ -112,31 +181,22 @@ export const AuthProvider = ({ children }) => {
   const login = async (credentials) => {
     dispatch({ type: AUTH_ACTIONS.LOGIN_START });
     try {
-      const response = await authAPI.login(credentials);
-      const { user, token } = response;
-      
-      console.log('Login response:', response);
-      console.log('User data:', user);
-      console.log('Token:', token);
-      
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      
+      const { user, token } = await authAPI.login(credentials);
+      persistAuth({ user, token });
+
       dispatch({
         type: AUTH_ACTIONS.LOGIN_SUCCESS,
         payload: { user, token },
       });
-      
-      console.log('After dispatch - state should be updated');
-      
+
       return { success: true };
     } catch (error) {
-      console.error('Login error:', error);
+      clearStoredAuth();
       dispatch({
         type: AUTH_ACTIONS.LOGIN_FAILURE,
-        payload: error.message || 'Login failed',
+        payload: getAuthErrorMessage(error, 'Login failed'),
       });
-      return { success: false, error: error.message || 'Login failed' };
+      return { success: false, error: getAuthErrorMessage(error, 'Login failed') };
     }
   };
 
@@ -144,31 +204,28 @@ export const AuthProvider = ({ children }) => {
   const register = async (userData) => {
     dispatch({ type: AUTH_ACTIONS.LOGIN_START });
     try {
-      const response = await authAPI.register(userData);
-      const { user, token } = response;
-      
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      
+      const { user, token } = await authAPI.register(userData);
+      persistAuth({ user, token });
+
       dispatch({
         type: AUTH_ACTIONS.LOGIN_SUCCESS,
         payload: { user, token },
       });
-      
+
       return { success: true };
     } catch (error) {
+      clearStoredAuth();
       dispatch({
         type: AUTH_ACTIONS.LOGIN_FAILURE,
-        payload: error.message || 'Registration failed',
+        payload: getAuthErrorMessage(error, 'Registration failed'),
       });
-      return { success: false, error: error.message || 'Registration failed' };
+      return { success: false, error: getAuthErrorMessage(error, 'Registration failed') };
     }
   };
 
   // Logout function
   const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    clearStoredAuth();
     dispatch({ type: AUTH_ACTIONS.LOGOUT });
   };
 
@@ -182,7 +239,9 @@ export const AuthProvider = ({ children }) => {
 
   // Check authentication on mount
   useEffect(() => {
-    loadUser();
+    if (storedToken) {
+      loadUser();
+    }
   }, []);
 
   const value = {

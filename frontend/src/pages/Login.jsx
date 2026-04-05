@@ -27,16 +27,15 @@ const Login = () => {
 
     try {
       const result = await login(formData);
-      if (result.success) {
-        toast.success('Login successful!');
-        console.log('Login successful, navigating to dashboard...');
-        // Use React Router navigate instead of window.location
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 100);
+      if (!result.success) {
+        toast.error(result.error || 'Login failed');
+        return;
       }
+
+      toast.success('Login successful!');
+      navigate('/dashboard', { replace: true });
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Login failed');
+      toast.error(error.message || 'Login failed');
     } finally {
       setLoading(false);
     }

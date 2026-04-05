@@ -18,9 +18,13 @@ const register = async (req, res) => {
     }
 
     const { name, email, password, role, phone } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+    const normalizedName = name.trim();
+    const normalizedRole = role.trim().toLowerCase();
+    const normalizedPhone = typeof phone === 'string' ? phone.trim() : phone;
 
     // Check if user exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({
         success: false,
@@ -30,15 +34,15 @@ const register = async (req, res) => {
 
     // Create user
     const user = await User.create({
-      name,
-      email,
+      name: normalizedName,
+      email: normalizedEmail,
       password,
-      role,
-      phone
+      role: normalizedRole,
+      phone: normalizedPhone
     });
 
     // If doctor, create doctor profile
-    if (role === 'doctor') {
+    if (normalizedRole === 'doctor') {
       const doctorProfile = await DoctorProfile.create({
         user: user._id,
         specialization: 'General Practitioner',
@@ -100,9 +104,10 @@ const login = async (req, res) => {
     }
 
     const { email, password } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
 
     // Check if user exists
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
     if (!user) {
       return res.status(401).json({
         success: false,

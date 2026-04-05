@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { User, Mail, Lock, Eye, EyeOff, UserCheck } from 'lucide-react';
+import { Stethoscope, User, Mail, Lock, Eye, EyeOff, UserCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const Register = () => {
@@ -29,16 +29,15 @@ const Register = () => {
 
     try {
       const result = await register(formData);
-      if (result.success) {
-        toast.success('Registration successful!');
-        console.log('Registration successful, navigating to dashboard...');
-        // Use React Router navigate instead of window.location
-        setTimeout(() => {
-          navigate('/dashboard');
-        }, 100);
+      if (!result.success) {
+        toast.error(result.error || 'Registration failed');
+        return;
       }
+
+      toast.success('Registration successful!');
+      navigate('/dashboard', { replace: true });
     } catch (error) {
-      toast.error(error.response?.data?.message || 'Registration failed');
+      toast.error(error.message || 'Registration failed');
     } finally {
       setLoading(false);
     }

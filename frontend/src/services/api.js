@@ -4,6 +4,29 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
 
+const STORAGE_KEYS = {
+  token: 'token',
+  user: 'user',
+};
+
+const readStorage = (key) => {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (error) {
+    console.error(`Unable to read ${key} from storage:`, error);
+    return null;
+  }
+};
+
+const clearStoredAuth = () => {
+  try {
+    window.localStorage.removeItem(STORAGE_KEYS.token);
+    window.localStorage.removeItem(STORAGE_KEYS.user);
+  } catch (error) {
+    console.error('Unable to clear auth storage:', error);
+  }
+};
+
 // Create axios instance
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -15,18 +38,15 @@ const api = axios.create({
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    console.log('API Request - Token from localStorage:', token);
-    console.log('API Request - Config headers before:', config.headers);
-    
+    const token = readStorage(STORAGE_KEYS.token);
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
-      console.log('API Request - Config headers after:', config.headers);
     }
+
     return config;
   },
   (error) => {
-    console.error('API Request Error:', error);
     return Promise.reject(error);
   }
 );
@@ -46,11 +66,15 @@ api.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       // Token expired or invalid
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+      clearStoredAuth();
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
-    return Promise.reject(error.response?.data || error.message);
+
+    return Promise.reject(
+      error.response?.data || { message: error.message || 'Request failed' }
+    );
   }
 );
 
