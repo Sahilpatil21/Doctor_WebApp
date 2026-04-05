@@ -27,11 +27,25 @@ const app = express();
 const server = http.createServer(app);
 const frontendDistPath = path.join(__dirname, '..', 'frontend', 'dist');
 const hasFrontendBuild = fs.existsSync(frontendDistPath);
+const configuredFrontendOrigin =
+  process.env.FRONTEND_URL ||
+  (process.env.RENDER_EXTERNAL_HOSTNAME
+    ? `https://${process.env.RENDER_EXTERNAL_HOSTNAME}`
+    : null);
+const defaultDevOrigin = 'http://localhost:5173';
+const allowedOrigins = [configuredFrontendOrigin, defaultDevOrigin].filter(Boolean);
+const resolveCorsOrigin = (origin, callback) => {
+  if (!origin || allowedOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+
+  return callback(new Error('Not allowed by CORS'));
+};
 
 // Socket.io setup
 const io = socketIo(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || "http://localhost:5173",
+    origin: resolveCorsOrigin,
     methods: ["GET", "POST"]
   }
 });
@@ -42,7 +56,7 @@ app.set('io', io);
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: resolveCorsOrigin,
   credentials: true
 }));
 app.use(morgan('combined'));
